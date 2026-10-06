@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TouchGrass Squad</title>
+<style>
+:root{--sky:#e9f2f5;--ink:#13233a;--grass:#2b9a57;--sun:#ffc531;--paper:#ffffff;--line:#c6d6dc;--bad:#b23a3a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--sky);color:var(--ink);font:16px/1.45 system-ui,"Segoe UI",sans-serif;padding:16px;max-width:520px;margin-inline:auto}
+h1,h2{font-family:"Arial Rounded MT Bold","Trebuchet MS",system-ui,sans-serif;margin:0 0 8px;letter-spacing:-.01em}
+h1{font-size:1.9rem}h2{font-size:1.15rem;margin-top:22px}
+input,button{font:inherit;border-radius:12px;border:2px solid var(--ink);padding:12px 14px;width:100%;margin:6px 0}
+input{background:var(--paper)}
+button,.btn{background:var(--ink);color:#fff;font-weight:700;cursor:pointer;text-align:center;display:block}
+button.alt{background:var(--paper);color:var(--ink)}
+:focus-visible{outline:3px solid var(--sun);outline-offset:2px}
+.blaze{background:var(--sun);border:3px solid var(--ink);border-radius:18px 18px 18px 4px;padding:16px;margin:14px 0}
+.blaze small{display:block;font-weight:700;margin-bottom:4px}
+.blaze p{font-size:1.25rem;font-weight:700;margin:0}
+.btn.go{background:var(--grass);padding:16px;border:2px solid var(--ink);border-radius:12px;font-size:1.1rem}
+#result{min-height:1.5em;font-weight:700;margin:8px 0}
+ol,ul{list-style:none;padding:0;margin:0}
+li{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:6px 0;display:flex;justify-content:space-between;gap:10px}
+li span.sub{color:#4a5d6e;font-size:.9rem;display:block}
+.err{color:var(--bad);font-weight:700}
+.top{display:flex;justify-content:space-between;align-items:baseline}
+@media (prefers-reduced-motion:no-preference){.pulse{animation:p 1.2s ease-in-out infinite}@keyframes p{50%{opacity:.5}}}
+</style>
+</head>
+<body>
+<section id="auth">
+  <h1>TouchGrass Squad</h1>
+  <p>Race your friends to finish outdoor photo quests. A local AI judges every photo.</p>
+  <input id="pname" placeholder="Your name" maxlength="24" autocomplete="nickname">
+  <h2>Start a group</h2>
+  <input id="gname" placeholder="Group name" maxlength="24">
+  <button id="create">Create group</button>
+  <h2>Join a group</h2>
+  <input id="code" placeholder="Group code" maxlength="5" autocapitalize="characters">
+  <button id="join" class="alt">Join group</button>
+  <p id="err" class="err"></p>
+</section>
+
+<section id="game" hidden>
+  <div class="top"><h1 id="gtitle"></h1><small>Code <b id="gcode"></b></small></div>
+  <div class="blaze"><small>Today's quest</small><p id="quest">…</p></div>
+  <label class="btn go">Take quest photo
+    <input id="shot" type="file" accept="image/*" capture="environment" hidden>
+  </label>
+  <div id="result" role="status"></div>
+  <h2>Leaderboard</h2><ol id="board"></ol>
+  <h2>Recent photos</h2><ul id="feed"></ul>
+  <button id="leave" class="alt">Leave group</button>
+</section>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let me = null;
+try { me = JSON.parse(localStorage.getItem('me') || 'null'); } catch {}
+
+async function api(url, body) {
+  const r = await fetch(url, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || 'Something went wrong.');
+  return j;
+}
+function show() { $('#auth').hidden = !!me; $('#game').hidden = !me; if (me) refresh(); }
+async function enter(url, body) {
+  try { const j = await api(url, body); me = { id: j.playerId, code: j.code }; localStorage.setItem('me', JSON.stringify(me)); show(); }
+  catch (e) { $('#err').textContent = e.message; }
+}
+$('#create').onclick = () => enter('/api/groups', { name: $('#gname').value, player: $('#pname').value });
+$('#join').onclick = () => enter('/api/join', { code: $('#code').value, player: $('#pname').value });
+$('#leave').onclick = () => { localStorage.removeItem('me'); me = null; show(); };
+
+async function refresh() {
+  if (!me) return;
+  try {
+    const g = await api('/api/groups/' + me.code);
+    $('#gtitle').textContent = g.name; $('#gcode').textContent = g.code; $('#quest').textContent = g.quest.text;
+    $('#board').innerHTML = g.players.map((p, i) =>
+      `<li><div>${i + 1}. ${esc(p.name)}${p.id === me.id ? ' (you)' : ''}<span class="sub">${p.streak}-day streak${p.doneToday ? ' · done today' : ''}</span></div><b>${p.points}</b></li>`).join('');
+    $('#feed').innerHTML = g.feed.length ? g.feed.map(f =>
+      `<li><div>${esc(f.player)}: ${esc(f.caption)}<span class="sub">${f.match ? 'Passed' : 'Not quite'} (${f.confidence}%)</span></div><b>${f.match ? '+' + f.points : ''}</b></li>`).join('')
+      : '<li>No photos yet. Be the first.</li>';
+  } catch (e) { if (/not found/i.test(e.message)) { localStorage.removeItem('me'); me = null; show(); } }
+}
+function shrink(file) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => {
+      const s = Math.min(1, 640 / Math.max(img.width, img.height));
+      const c = document.createElement('canvas'); c.width = img.width * s; c.height = img.height * s;
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      res(c.toDataURL('image/jpeg', .8).split(',')[1]);
+    };
+    img.onerror = () => rej(new Error('Could not read that photo.'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+$('#shot').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  const out = $('#result'); out.className = 'pulse'; out.textContent = 'Gemma is judging your photo…';
+  try { const r = await api('/api/submit', { playerId: me.id, image: await shrink(f) }); out.textContent = (r.match ? 'Passed. ' : 'Try again. ') + r.message; }
+  catch (err) { out.textContent = err.message; }
+  out.className = ''; e.target.value = ''; refresh();
+};
+show(); setInterval(refresh, 6000);
+</script>
+</body>
+</html>

@@ -1,8 +1,9 @@
 {
   "name": "touchgrass-squad",
-  "version": "0.1.0",
-  "description": "Offline friends-vs-friends outdoor photo quests, judged by a local Gemma model.",
+  "version": "0.3.0",
+  "description": "Offline-first friends-vs-friends outdoor quests, judged by a local Gemma model.",
   "main": "server.js",
-  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" },
+  "scripts": { "start": "node server.js", "worker": "node worker.js" },
   "dependencies": { "express": "^4.19.2" }
 }

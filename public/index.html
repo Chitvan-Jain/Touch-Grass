@@ -3,142 +3,202 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#3e5f58">
 <title>TouchGrass Squad</title>
 <style>
-:root{--sky:#e9f2f5;--ink:#13233a;--grass:#2b9a57;--sun:#ffc531;--paper:#ffffff;--line:#c6d6dc;--bad:#b23a3a}
+@font-face{font-family:"Barlow Condensed";font-weight:700;font-display:swap;src:url(/fonts/barlow-condensed-latin-700-normal.woff2) format("woff2")}
+@font-face{font-family:"Barlow Condensed";font-weight:800;font-display:swap;src:url(/fonts/barlow-condensed-latin-800-normal.woff2) format("woff2")}
+@font-face{font-family:"Space Mono";font-weight:400;font-display:swap;src:url(/fonts/space-mono-latin-400-normal.woff2) format("woff2")}
+@font-face{font-family:"Space Mono";font-weight:700;font-display:swap;src:url(/fonts/space-mono-latin-700-normal.woff2) format("woff2")}
+@font-face{font-family:Inter;font-weight:400;font-display:swap;src:url(/fonts/inter-latin-400-normal.woff2) format("woff2")}
+@font-face{font-family:Inter;font-weight:600;font-display:swap;src:url(/fonts/inter-latin-600-normal.woff2) format("woff2")}
+:root{--teal:#3e5f58;--cream:#f3f2ea;--paper:#faf9f3;--ink:#12201d;--coral:#ea857c;--red:#e2392b;--blue:#8aabdc;--sun:#f2b83a;--pb:#d5e4f6;--pp:#f9d3ce;--pg:#e6e2cf;--line:#cfcdbf;--mute:#5b6b67;
+--head:"Barlow Condensed","Arial Narrow",Impact,sans-serif;--mono:"Space Mono",Consolas,monospace}
 *{box-sizing:border-box}[hidden]{display:none!important}
-body{margin:0;background:var(--sky);color:var(--ink);font:16px/1.45 system-ui,"Segoe UI",sans-serif;padding:16px;max-width:520px;margin-inline:auto}
-h1,h2{font-family:"Arial Rounded MT Bold","Trebuchet MS",system-ui,sans-serif;margin:0 0 8px;letter-spacing:-.01em}
-h1{font-size:1.9rem}h2{font-size:1.15rem;margin-top:22px}
-input,button{font:inherit;border-radius:12px;border:2px solid var(--ink);padding:12px 14px;width:100%;margin:6px 0}
-input{background:var(--paper)}
-button,.btn{background:var(--ink);color:#fff;font-weight:700;cursor:pointer;text-align:center;display:block}
-button.alt{background:var(--paper);color:var(--ink)}
+body{margin:0;background:var(--cream);color:var(--ink);font:16px/1.5 Inter,system-ui,"Segoe UI",sans-serif}
+.wrap{max-width:520px;margin:0 auto;padding:0 16px}
+main .wrap{padding-bottom:48px}
+h1,h2,h3{font-family:var(--head);font-weight:800;line-height:.95;letter-spacing:-.01em;margin:0}
+h2{font-size:2.5rem;margin:2px 0 12px}h2 em,h1 em{font-style:normal;color:var(--red)}
+h3{font-size:1.8rem;margin:10px 0 0}
+.eyebrow{font:700 .72rem var(--mono);letter-spacing:.14em;text-transform:uppercase;margin:30px 0 4px}
+.bar{background:var(--teal);border-bottom:2px solid var(--ink)}
+.bar .wrap{display:flex;justify-content:space-between;align-items:center;padding-block:12px;gap:12px}
+.logo{font:800 1.7rem/1 var(--head);color:#fff;letter-spacing:.01em}.logo b{color:var(--blue)}
+.chip{font:700 .78rem var(--mono);background:var(--coral);color:#2b1210;border:2px solid var(--ink);box-shadow:3px 3px 0 var(--ink);padding:5px 9px}
+.hero{background:var(--teal);color:#fff;position:relative;overflow:hidden;padding:34px 0 38px;border-bottom:2px solid var(--ink)}
+.hero .eyebrow{color:#f4b8b1;margin-top:0}
+.hero h1{font-size:3.6rem;color:#fff}.hero h1 em{color:var(--blue)}
+.hero p{max-width:36ch;color:#e3ece9;margin:12px 0 0}
+.hero.small{padding:26px 0 28px}.hero.small h1{font-size:3rem}
+.px{position:absolute;left:0;top:0;width:14px;height:14px;background:var(--red);box-shadow:14px 0 var(--red),0 14px var(--red),0 28px var(--red),28px 0 var(--paper),14px 14px var(--paper),0 42px var(--paper),28px 14px var(--red)}
+.px.br{left:auto;right:0;top:auto;bottom:0;box-shadow:-14px 0 var(--coral),-28px 0 var(--red),0 -14px var(--coral),-14px -14px var(--red),-28px -14px var(--red),-42px 0 var(--paper)}
+input,button,.btn{font:inherit;border-radius:0;width:100%}
+input{background:var(--paper);border:2px solid var(--ink);padding:12px;margin:6px 0}
+button,.btn{font:700 .9rem var(--mono);letter-spacing:.04em;text-transform:uppercase;background:var(--coral);color:#2b1210;border:2px solid var(--ink);box-shadow:4px 4px 0 var(--ink);padding:13px 16px;cursor:pointer;display:block;text-align:center;margin:14px 0}
+button:active,.btn:active{transform:translate(3px,3px);box-shadow:1px 1px 0 var(--ink)}
+button.alt{background:var(--paper)}
 :focus-visible{outline:3px solid var(--sun);outline-offset:2px}
-.blaze{background:var(--sun);border:3px solid var(--ink);border-radius:18px 18px 18px 4px;padding:16px;margin:14px 0}
-.blaze.walk{background:#cfe9d6}
-.blaze small{display:block;font-weight:700;margin-bottom:4px}
-.blaze p{font-size:1.25rem;font-weight:700;margin:0 0 10px}
-.btn.go{background:var(--grass);padding:16px;border:2px solid var(--ink);border-radius:12px;font-size:1.1rem}
-#result{min-height:1.5em;font-weight:700;margin:8px 0}
+.card{background:var(--paper);border:2px solid var(--ink);box-shadow:5px 5px 0 var(--teal);display:flex;margin:12px 5px 14px 0}
+.card .main{padding:14px 16px;flex:1;min-width:0}
+.card .side{border-left:2px solid var(--ink);width:86px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--cream);padding:8px 4px;text-align:center}
+.side small,.stat small{display:block;font:700 .6rem var(--mono);letter-spacing:.1em;color:var(--mute)}
+.side b{font:800 2.5rem/1 var(--head)}
+.pill{display:inline-block;font:700 .66rem var(--mono);letter-spacing:.1em;text-transform:uppercase;padding:3px 8px;border-radius:3px;background:var(--pg);color:#4a4a3c}
+.pill.b{background:var(--pb);color:#2a4f86}.pill.p{background:var(--pp);color:#8a2a22}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:22px 4px 0 0}
+.stat{background:var(--paper);border:2px solid var(--ink);box-shadow:3px 3px 0 var(--teal);padding:10px}
+.stat b{font:800 2.1rem/1 var(--head);display:block;margin-top:2px}
+.dots{display:flex;gap:3px;margin-top:6px}.dots i{width:9px;height:9px;background:var(--line)}.dots i.on{background:var(--red)}
+.xp{height:9px;background:var(--line);border:1px solid var(--ink);margin-top:7px}.xp i{display:block;height:100%;width:0;background:var(--sun)}
+.steps{display:flex;gap:6px;margin:12px 0 2px}.steps i{flex:1;height:16px;border:2px solid var(--ink);background:var(--paper)}.steps i.on{background:var(--red)}
+#result:not(:empty){padding:12px 14px;border:2px solid var(--ink);font-weight:600;background:var(--paper);margin:12px 0}
+#result.pass{background:#d7ecd3}#result.fail{background:var(--pp)}
 ol,ul{list-style:none;padding:0;margin:0}
-li{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:6px 0;display:flex;justify-content:space-between;gap:10px}
-li span.sub{color:#4a5d6e;font-size:.9rem;display:block}
-.err{color:var(--bad);font-weight:700}
-.top{display:flex;justify-content:space-between;align-items:baseline}
-@media (prefers-reduced-motion:no-preference){.pulse{animation:p 1.2s ease-in-out infinite}@keyframes p{50%{opacity:.5}}}
+.row{display:flex;align-items:center;gap:12px;background:var(--paper);border:2px solid var(--ink);padding:10px 12px;margin:9px 0}
+.row.me{box-shadow:4px 4px 0 var(--coral)}
+.rank{font:800 1.6rem/1 var(--head);width:36px;height:36px;display:grid;place-items:center;border:2px solid var(--ink);background:var(--pg);flex:none}
+.r1 .rank{background:var(--sun)}.r2 .rank{background:var(--pb)}.r3 .rank{background:var(--pp)}
+.who{flex:1;min-width:0}.who b{display:block}.who span{display:block;font:400 .76rem var(--mono);color:var(--mute)}
+.pts{font:800 1.9rem/1 var(--head);text-align:right;flex:none}.pts small{display:block;font:700 .55rem var(--mono);letter-spacing:.1em;color:var(--mute)}
+.err{color:var(--red);font-weight:600}
+#screenMsg{margin:0 0 4px;color:var(--mute)}
+@media(prefers-reduced-motion:no-preference){
+.pulse{animation:p 1.2s ease-in-out infinite}@keyframes p{50%{opacity:.55}}
+.pop{animation:pop .4s ease-out}@keyframes pop{0%{transform:scale(.92)}60%{transform:scale(1.04)}100%{transform:scale(1)}}
+.shake{animation:sh .3s}@keyframes sh{25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}}
+
+.net{margin:14px 0 0;padding:10px 12px;border:2px solid var(--ink);background:var(--pb);font:700 .78rem var(--mono)}
+.net.off{background:var(--pp)}
+.steps i.wait{background:var(--sun)}
+.hint{font-size:.85rem;color:var(--mute);margin:8px 0 0}
 </style>
 </head>
 <body>
+<header class="bar"><div class="wrap">
+  <span class="logo">TOUCHGRASS<b>SQUAD</b></span>
+  <span id="chip" class="chip" hidden>CODE <span id="gcode"></span></span>
+</div></header>
+
 <section id="auth">
-  <h1>TouchGrass Squad</h1>
-  <p>Race your friends to finish outdoor photo quests. A local AI judges every photo.</p>
-  <input id="pname" placeholder="Your name" maxlength="24" autocomplete="nickname">
-  <h2>Start a group</h2>
-  <input id="gname" placeholder="Group name" maxlength="24">
-  <button id="create">Create group</button>
-  <h2>Join a group</h2>
-  <input id="code" placeholder="Group code" maxlength="5" autocapitalize="characters">
-  <button id="join" class="alt">Join group</button>
-  <p id="err" class="err"></p>
+  <div class="hero"><i class="px"></i><i class="px br"></i><div class="wrap">
+    <p class="eyebrow">Outdoor squad game</p>
+    <h1>Touch grass.<br><em>Together.</em></h1>
+    <p>Do real things outside with your friends. Photos stay sealed on your phone, and a local AI opens them when you are home.</p>
+  </div></div>
+  <main><div class="wrap">
+    <p class="eyebrow">Step one</p><h2>Who <em>are you?</em></h2>
+    <input id="pname" placeholder="Your name" maxlength="24" autocomplete="nickname">
+    <div class="card"><div class="main">
+      <span class="pill b">New squad</span><h3>Start a group</h3>
+      <input id="gname" placeholder="Group name" maxlength="24">
+      <button id="create">Create group</button>
+    </div></div>
+    <div class="card"><div class="main">
+      <span class="pill p">Have a code?</span><h3>Join a group</h3>
+      <input id="code" placeholder="Group code" maxlength="5" autocapitalize="characters">
+      <button id="join" class="alt">Join group</button>
+    </div></div>
+    <p id="err" class="err"></p>
+  </div></main>
 </section>
 
 <section id="game" hidden>
-  <div class="top"><h1 id="gtitle"></h1><small>Code <b id="gcode"></b></small></div>
-  <div class="blaze"><small>Today's quest</small><p id="quest">…</p></div>
-  <label class="btn go">Take quest photo
-    <input id="shot" type="file" accept="image/*" capture="environment" hidden>
-  </label>
-  <button id="reroll" class="alt">Swap quest</button>
-  <div id="result" role="status"></div>
+  <div class="hero small"><i class="px"></i><div class="wrap">
+    <p class="eyebrow">Your squad</p><h1 id="gtitle"></h1>
+  </div></div>
+  <main><div class="wrap">
+    <div id="net" class="net" hidden></div>
+    <div class="stats">
+      <div class="stat"><small>POINTS</small><b id="sPts">0</b></div>
+      <div class="stat"><small>STREAK</small><b id="sStreak">0</b><div class="dots" id="sDots"></div></div>
+      <div class="stat"><small>LEVEL <span id="sLvl">1</span></small><b id="sXpTxt">0/50</b><div class="xp"><i id="sXp"></i></div></div>
+    </div>
 
-  <h2>Walk challenge</h2>
-  <div class="blaze walk">
-    <small id="walkProg"></small><p id="walkText"></p>
-    <label class="btn go" id="walkBtn">Take photo for this stop
-      <input id="wshot" type="file" accept="image/*" capture="environment" hidden>
-    </label>
-  </div>
+    <p class="eyebrow">Daily</p><h2>Squad <em>quest.</em></h2>
+    <div class="card"><div class="main"><span class="pill b">Do it together</span><h3 id="quest">…</h3>
+      <p class="hint">Everyone in the squad does it. Send photos within 90 minutes of each other for the together bonus.</p>
+      <p class="hint" id="squadState"></p></div>
+      <div class="side"><small>REWARD</small><b>+10</b><small>+10 TOGETHER</small></div></div>
+    <label class="btn" id="squadBtn">Take squad photo<input id="shot" type="file" accept="image/*" capture="environment" hidden></label>
+    <button id="reroll" class="alt">Swap quest</button>
+    <div id="result" role="status"></div>
 
-  <h2>Screen time</h2>
-  <p id="screenMsg"></p>
-  <input id="hours" type="number" min="0" max="24" step="0.5" inputmode="decimal" placeholder="Hours on your phone today">
-  <button id="saveHours" class="alt">Save screen time</button>
-  <div id="detoxBox" class="blaze" hidden>
-    <small>Detox quest</small><p id="detoxText"></p>
-    <label class="btn go">Take detox photo
-      <input id="dshot" type="file" accept="image/*" capture="environment" hidden>
-    </label>
-  </div>
+    <p class="eyebrow">On foot</p><h2>Walk <em>challenge.</em></h2>
+    <div class="card"><div class="main"><span class="pill p" id="walkProg"></span><h3 id="walkText"></h3><div class="steps" id="walkSteps"></div></div>
+      <div class="side"><small>PER STOP</small><b>+4</b><small>+10 BONUS</small></div></div>
+    <label class="btn" id="walkBtn">Take photo for this stop<input id="wshot" type="file" accept="image/*" capture="environment" hidden></label>
 
-  <h2>Leaderboard</h2><ol id="board"></ol>
-  <h2>Recent photos</h2><ul id="feed"></ul>
-  <button id="leave" class="alt">Leave group</button>
+    <p class="eyebrow">Unplug</p><h2>Screen <em>time.</em></h2>
+    <p id="screenMsg"></p>
+    <input id="hours" type="number" min="0" max="24" step="0.5" inputmode="decimal" placeholder="Hours on your phone today">
+    <button id="saveHours" class="alt">Save screen time</button>
+    <div id="detoxBox" class="card"><div class="main"><span class="pill">Detox quest</span><h3 id="detoxText"></h3></div>
+      <div class="side"><small>REWARD</small><b>+15</b><small>PTS</small></div></div>
+    <label class="btn" id="detoxBtn">Take detox photo<input id="dshot" type="file" accept="image/*" capture="environment" hidden></label>
+
+    <p class="eyebrow">Sealed</p><h2>Your <em>envelopes.</em></h2>
+    <ul id="envelopes"></ul>
+    <p class="eyebrow">Standings</p><h2>The <em>leaderboard.</em></h2>
+    <ol id="board"></ol>
+    <p class="eyebrow">Proof</p><h2>Recent <em>photos.</em></h2>
+    <ul id="feed"></ul>
+    <button id="leave" class="alt">Leave group</button>
+  </div></main>
 </section>
 
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let me = null;
-try { me = JSON.parse(localStorage.getItem('me') || 'null'); } catch {}
+const LS = {
+  get(k, d) { try { const v = JSON.parse(localStorage.getItem(k)); return v === null || v === undefined ? d : v; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } }
+};
+const localId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const localDay = () => { const d = new Date(), p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
+const loadQ = () => LS.get('queue', []);
+const saveQ = q => LS.set('queue', q);
+const KIND = { squad: ['b', 'Squad'], walk: ['', 'Walk'], detox: ['p', 'Detox'] };
+let me = LS.get('me', null), plan = me ? LS.get('plan:' + me.code, null) : null, reachable = true, flushing = false;
 
 async function api(url, body) {
-  const r = await fetch(url, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
-  const j = await r.json();
+  let r;
+  try { r = await fetch(url, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}); }
+  catch { const e = new Error('No connection.'); e.net = true; throw e; }
+  let j = {}; try { j = await r.json(); } catch {}
   if (!r.ok) throw new Error(j.error || 'Something went wrong.');
   return j;
 }
-function show() { $('#auth').hidden = !!me; $('#game').hidden = !me; if (me) refresh(); }
+function say(text, cls) { const out = $('#result'); out.textContent = text; out.className = cls || ''; }
+
+function show() {
+  $('#auth').hidden = !!me; $('#game').hidden = !me; $('#chip').hidden = !me;
+  if (me) { plan = LS.get('plan:' + me.code, plan); render(); sync(); }
+}
 async function enter(url, body) {
-  try { const j = await api(url, body); me = { id: j.playerId, code: j.code }; localStorage.setItem('me', JSON.stringify(me)); show(); }
-  catch (e) { $('#err').textContent = e.message; }
+  try { const j = await api(url, body); me = { id: j.playerId, code: j.code }; plan = null; LS.set('me', me); show(); }
+  catch (e) { $('#err').textContent = e.net ? 'Joining needs a connection.' : e.message; }
 }
 $('#create').onclick = () => enter('/api/groups', { name: $('#gname').value, player: $('#pname').value });
 $('#join').onclick = () => enter('/api/join', { code: $('#code').value, player: $('#pname').value });
-$('#leave').onclick = () => { localStorage.removeItem('me'); me = null; show(); };
+$('#leave').onclick = () => leave();
+function leave() { localStorage.removeItem('me'); me = null; plan = null; show(); }
 
 $('#reroll').onclick = async () => {
-  const out = $('#result'); out.textContent = 'Finding a new quest…';
-  try { await api('/api/groups/' + me.code + '/reroll', {}); out.textContent = 'New quest ready.'; }
-  catch (e) { out.textContent = e.message; }
-  refresh();
+  say('Finding a new quest…', 'pulse');
+  try { await api(`/api/groups/${me.code}/reroll`, { day: localDay() }); say('New quest ready.', 'pass'); await pull(); }
+  catch (e) { say(e.net ? 'Swapping needs a connection.' : e.message, 'fail'); }
 };
-$('#saveHours').onclick = async () => {
-  const out = $('#result'); out.textContent = 'Saving…';
-  try {
-    const r = await api('/api/screentime', { playerId: me.id, hours: $('#hours').value });
-    out.textContent = r.over ? 'Over the limit. A detox quest is waiting below.' : 'Saved. You are under the limit.';
-  } catch (e) { out.textContent = e.message; }
-  refresh();
+$('#saveHours').onclick = () => {
+  const h = Number($('#hours').value);
+  if ($('#hours').value === '' || !(h >= 0 && h <= 24)) return say('Enter hours between 0 and 24.', 'fail');
+  LS.set('hours:' + localDay(), h);
+  const q = loadQ(); q.push({ qid: localId(), type: 'screen', hours: h, day: localDay() }); saveQ(q);
+  say(h >= (plan ? plan.detox.limit : 3) ? 'Saved. A detox quest is unlocked below.' : 'Saved. You are under the limit.', 'pass');
+  render(); sync();
 };
 
-function renderMine(m) {
-  if (!m) return;
-  $('#screenMsg').textContent = m.screenHours === null
-    ? `Check your phone's screen time and enter it. ${m.limit} hours or more earns a detox quest worth 15 points.`
-    : `You logged ${m.screenHours} hours today.` + (m.screenHours >= m.limit ? '' : ' Under the limit, nice.');
-  $('#detoxBox').hidden = !m.detox;
-  if (m.detox) $('#detoxText').textContent = m.detox.done ? 'Done today. ' + m.detox.text : m.detox.text;
-  const w = m.walk;
-  $('#walkProg').textContent = w.current ? `Stop ${w.done + 1} of ${w.total}` : `Walk complete: ${w.total} of ${w.total}`;
-  $('#walkText').textContent = w.current || 'Nice walk. Every checkpoint is done.';
-  $('#walkBtn').hidden = !w.current;
-}
-
-async function refresh() {
-  if (!me) return;
-  try {
-    const g = await api('/api/groups/' + me.code + '?player=' + me.id);
-    $('#gtitle').textContent = g.name; $('#gcode').textContent = g.code; $('#quest').textContent = g.quest.text;
-    renderMine(g.mine);
-    $('#board').innerHTML = g.players.map((p, i) =>
-      `<li><div>${i + 1}. ${esc(p.name)}${p.id === me.id ? ' (you)' : ''}<span class="sub">${p.streak}-day streak${p.doneToday ? ' · done today' : ''} · walk ${p.walk}/${g.walkTotal}</span></div><b>${p.points}</b></li>`).join('');
-    $('#feed').innerHTML = g.feed.length ? g.feed.map(f =>
-      `<li><div>${esc(f.player)}${f.kind === 'detox' ? ' (detox)' : f.kind === 'walk' ? ' (walk)' : ''}: ${esc(f.caption)}<span class="sub">${f.match ? 'Passed (' + f.confidence + '%)' : 'Not quite'}</span></div><b>${f.match ? '+' + f.points : ''}</b></li>`).join('')
-      : '<li>No photos yet. Be the first.</li>';
-  } catch (e) { if (/not found/i.test(e.message)) { localStorage.removeItem('me'); me = null; show(); } }
-}
-
+// ---- sealed proofs: saved on the phone first, uploaded whenever there is a connection (D31) ----
 function shrink(file) {
   return new Promise((res, rej) => {
     const img = new Image();
@@ -152,25 +212,104 @@ function shrink(file) {
     img.src = URL.createObjectURL(file);
   });
 }
-let busy = false;
-async function submitPhoto(e, kind) {
-  const f = e.target.files[0]; if (!f) return;
-  const out = $('#result');
-  if (busy) { out.textContent = 'Wait for the current photo to finish judging.'; e.target.value = ''; return; }
-  busy = true; const t0 = Date.now(); let msg;
-  out.className = 'pulse'; out.textContent = 'Gemma is judging your photo…';
-  const tick = setInterval(() => { out.textContent = `Gemma is judging your photo… ${Math.round((Date.now() - t0) / 1000)}s`; }, 1000);
-  try { const r = await api('/api/submit', { playerId: me.id, kind, image: await shrink(f) }); msg = (r.match ? 'Passed. ' : 'Try again. ') + r.message; }
-  catch (err) { msg = err.message; }
-  clearInterval(tick); busy = false; out.className = '';
-  out.textContent = `${msg} (${Math.round((Date.now() - t0) / 1000)}s)`;
-  e.target.value = ''; refresh();
+function walkStates() {
+  const m = (plan && plan.mine) || {}, q = loadQ();
+  return (m.walk || []).map((s, k) => s === 'none' && q.some(x => x.kind === 'walk' && x.stopIndex === k && x.day === localDay()) ? 'wait' : s);
 }
-$('#shot').onchange = e => submitPhoto(e, 'quest');
-$('#dshot').onchange = e => submitPhoto(e, 'detox');
-$('#wshot').onchange = e => submitPhoto(e, 'walk');
+async function capture(e, kind) {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  let stopIndex;
+  if (kind === 'walk') { stopIndex = walkStates().indexOf('none'); if (stopIndex < 0) return; }
+  let image; try { image = await shrink(f); } catch (err) { return say(err.message, 'fail'); }
+  const q = loadQ(); q.push({ qid: localId(), type: 'proof', kind, stopIndex, day: localDay(), takenAt: Date.now(), image });
+  if (!saveQ(q)) return say('This app\'s storage on your phone is full. Reconnect to upload first.', 'fail');
+  say('Sealed and saved on your phone.', 'pass pop'); render(); sync();
+}
+$('#shot').onchange = e => capture(e, 'squad');
+$('#wshot').onchange = e => capture(e, 'walk');
+$('#dshot').onchange = e => capture(e, 'detox');
 
-show(); setInterval(refresh, 6000);
+async function flush() {
+  if (flushing || !me) return;
+  flushing = true;
+  try {
+    for (;;) {
+      const it = loadQ()[0]; if (!it) break;
+      try {
+        if (it.type === 'screen') await api('/api/screentime', { playerId: me.id, hours: it.hours, day: it.day });
+        else await api('/api/submit', { playerId: me.id, kind: it.kind, stopIndex: it.stopIndex, day: it.day, takenAt: it.takenAt, image: it.image });
+      } catch (e) {
+        if (e.net) { reachable = false; break; }                 // offline: keep everything, try again later
+        say(`${it.type === 'screen' ? 'Screen time' : KIND[it.kind][1]}: ${e.message}`, 'fail');   // rejected: drop it
+      }
+      saveQ(loadQ().filter(x => x.qid !== it.qid));
+    }
+  } finally { flushing = false; }
+}
+async function pull() {
+  if (!me) return;
+  try {
+    const g = await api(`/api/groups/${me.code}?player=${me.id}&day=${localDay()}`);
+    plan = g; LS.set('plan:' + me.code, g); reachable = true;
+  } catch (e) {
+    if (e.net) reachable = false;
+    else if (/not found/i.test(e.message)) return leave();
+  }
+  render();
+}
+async function sync() { await flush(); await pull(); }
+window.addEventListener('online', sync);
+window.addEventListener('offline', () => { reachable = false; render(); });
+
+// ---- drawing the page from the latest plan (live or cached) ----
+function renderStats(p) {
+  $('#sPts').textContent = p.points; $('#sStreak').textContent = p.streak;
+  $('#sDots').innerHTML = Array.from({ length: 7 }, (_, i) => `<i class="${i < p.streak ? 'on' : ''}"></i>`).join('');
+  const xp = p.points % 50;
+  $('#sLvl').textContent = Math.floor(p.points / 50) + 1; $('#sXpTxt').textContent = xp + '/50'; $('#sXp').style.width = (xp * 2) + '%';
+}
+function render() {
+  if (!me || !plan) return;
+  const q = loadQ(), proofsQ = q.filter(x => x.type === 'proof'), m = plan.mine || {}, day = localDay();
+  $('#gtitle').textContent = plan.name; $('#gcode').textContent = plan.code; $('#quest').textContent = plan.quest.text;
+
+  let msg = '', cls = 'net';
+  if (!reachable) { msg = q.length ? `Offline. ${q.length} item(s) sealed on your phone will upload when you reconnect.` : 'Offline. Photos you take are sealed on your phone and upload later.'; cls += ' off'; }
+  else if (q.length) msg = `Uploading ${q.length} item(s)…`;
+  else if (plan.judge.waiting) msg = plan.judge.online ? `Gemma is judging ${plan.judge.waiting} photo(s)…` : `${plan.judge.waiting} photo(s) are waiting for the home judge. Start worker.js on your laptop.`;
+  $('#net').hidden = !msg; $('#net').className = cls; $('#net').textContent = msg;
+
+  const sq = m.squad === 'none' && proofsQ.some(x => x.kind === 'squad' && x.day === day) ? 'wait' : (m.squad || 'none');
+  $('#squadBtn').hidden = sq !== 'none';
+  $('#squadState').textContent = sq === 'pass' ? 'Done. Nice work, squad.' : sq === 'wait' ? 'Photo sealed. The verdict comes when the judge opens it.' : '';
+
+  const ws = walkStates(), cur = ws.indexOf('none');
+  $('#walkSteps').innerHTML = ws.map(s => `<i class="${s === 'pass' ? 'on' : s === 'wait' ? 'wait' : ''}"></i>`).join('');
+  $('#walkProg').textContent = cur >= 0 ? `Stop ${cur + 1} of ${ws.length}` : (ws.every(s => s === 'pass') ? 'Walk complete' : 'All stops sent');
+  $('#walkText').textContent = cur >= 0 ? plan.walk.stops[cur] : 'Every checkpoint is sealed. Results come when the judge opens them.';
+  $('#walkBtn').hidden = cur < 0;
+
+  const stored = LS.get('hours:' + day, null), hours = stored !== null ? stored : (m.screenHours === undefined ? null : m.screenHours), limit = plan.detox.limit;
+  $('#screenMsg').textContent = hours === null ? `Check your phone's screen time and enter it. ${limit} hours or more earns a detox quest worth 15 points.` : `You logged ${hours} hours today.` + (hours >= limit ? '' : ' Under the limit, nice.');
+  const dt = m.detox === 'none' && proofsQ.some(x => x.kind === 'detox' && x.day === day) ? 'wait' : (m.detox || 'none');
+  $('#detoxBox').hidden = !(hours !== null && hours >= limit);
+  $('#detoxText').textContent = plan.detox.text + (dt === 'pass' ? ' (done)' : dt === 'wait' ? ' (sealed)' : '');
+  $('#detoxBtn').hidden = $('#detoxBox').hidden || dt !== 'none';
+
+  const mine = plan.players.find(p => p.id === me.id); if (mine) renderStats(mine);
+  $('#board').innerHTML = plan.players.map((p, i) =>
+    `<li class="row r${i + 1}${p.id === me.id ? ' me' : ''}"><span class="rank">${i + 1}</span><div class="who"><b>${esc(p.name)}${p.id === me.id ? ' (you)' : ''}</b><span>${p.streak}-day streak${p.squad ? ' · squad quest done' : ''} · walk ${p.walk}/${plan.walk.total}</span></div><b class="pts">${p.points}<small>PTS</small></b></li>`).join('');
+  const rows = [
+    ...proofsQ.map(x => ({ k: x.kind, s: 'Saved on your phone', c: '' })),
+    ...(m.proofs || []).map(p => ({ k: p.kind, s: p.status === 'pending' ? 'Waiting for the judge' : p.match ? `Passed +${p.points}` : p.reason === 'indoors' ? 'Looked indoors, take it outside' : 'Not quite', c: p.status === 'done' ? p.caption : p.text }))];
+  $('#envelopes').innerHTML = rows.length ? rows.map(r => `<li class="row"><span class="pill ${KIND[r.k][0]}">${KIND[r.k][1]}</span><div class="who"><b>${esc(r.s)}</b><span>${esc(r.c)}</span></div></li>`).join('') : '<li class="row">Nothing sealed yet.</li>';
+  $('#feed').innerHTML = plan.feed.length ? plan.feed.map(f => { const k = KIND[f.kind] || KIND.squad;
+    return `<li class="row"><span class="pill ${k[0]}">${k[1]}</span><div class="who"><b>${esc(f.player)}</b><span>${esc(f.caption)}</span><span>${f.match ? 'Passed (' + f.confidence + '%)' : 'Not quite'}</span></div><b class="pts">${f.match ? '+' + f.points : '–'}</b></li>`; }).join('')
+    : '<li class="row">No judged photos yet.</li>';
+}
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+show(); setInterval(sync, 6000);
 </script>
 </body>
 </html>

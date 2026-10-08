@@ -1,135 +1,146 @@
 // TouchGrass Squad server. See flow.md (architecture) and decision.md (why).
+// MODE=local (default): everything on one machine, judging happens in this process.
+// MODE=hub: hosted copy with no AI. worker.js on your laptop fetches photos, judges them and posts verdicts (D32).
 const express = require('express');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
+const { gemma, judgeObject, judgeSquad, makeBank, BAD_QUEST, MODEL } = require('./judge');
 
-const MODEL = process.env.MODEL || 'gemma4:e4b-it-q4_K_M';
-const OLLAMA = process.env.OLLAMA_URL || 'http://localhost:11434';
+const MODE = process.env.MODE === 'hub' ? 'hub' : 'local';
 const PORT = process.env.PORT || 3000;
+const DATA_DIR = path.resolve(process.env.DATA_DIR || __dirname);
+const WORKER_KEY = process.env.WORKER_KEY || '';
 const MIN_CONFIDENCE = 60;
-const WALK_STOPS = 5, WALK_POINTS = 4, WALK_BONUS = 10;   // walk challenge (D22, D23)
-const REQUIRE_OUTDOORS = process.env.REQUIRE_OUTDOORS !== '0';   // D27
-const SCREEN_LIMIT = Number(process.env.SCREEN_LIMIT) || 3; // hours per day before a detox quest
-const DB_FILE = path.join(__dirname, 'data.json');
+const REQUIRE_OUTDOORS = process.env.REQUIRE_OUTDOORS !== '0';        // D27
+const SCREEN_LIMIT = Number(process.env.SCREEN_LIMIT) || 3;           // D20
+const WALK_STOPS = 5, WALK_POINTS = 4, WALK_BONUS = 10, DETOX_POINTS = 15;
+const TOGETHER_BONUS = 10, TOGETHER_WINDOW = 90 * 60 * 1000;          // D34
 
-// ---- storage: one JSON file, loaded into memory (decision D5) ----
-let db = { groups: {}, players: {}, subs: [], hashes: [] };
-if (fs.existsSync(DB_FILE)) db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-const save = () => fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+// ---- storage: one JSON file in memory (D5). Photos are temp files until judged (D37) ----
+fs.mkdirSync(path.join(DATA_DIR, 'photos'), { recursive: true });
+const DB_FILE = path.join(DATA_DIR, 'data.json');
+let db = { groups: {}, players: {}, subs: [], hashes: [], bank: {}, workerSeen: 0 };
+if (fs.existsSync(DB_FILE)) db = { ...db, ...JSON.parse(fs.readFileSync(DB_FILE, 'utf8')) };
+db.bank = { squad: [], stops: [], detox: [], ...db.bank };
+const save = () => { const t = DB_FILE + '.tmp'; fs.writeFileSync(t, JSON.stringify(db)); fs.renameSync(t, DB_FILE); };
 
 // ---- helpers ----
+const uid = () => crypto.randomUUID();
+const clean = s => String(s || '').trim().slice(0, 24);
 const pad = n => String(n).padStart(2, '0');
 const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const today = () => ymd(new Date());
-const yesterday = () => { const d = new Date(); d.setDate(d.getDate() - 1); return ymd(d); };
-const clean = s => String(s || '').trim().slice(0, 24);
-const FALLBACK = [
-  'Photograph something red that you find outside.',
-  'Find a plant growing where it probably should not (a crack, a wall).',
-  'Take a photo of the biggest tree you can find.',
-  'Capture the sky with at least one cloud in it.',
-  'Photograph a handful or pile of leaves.',
-  'Find an animal or a bird and photograph it.'
+const serverDay = () => ymd(new Date());
+const prevDay = day => { const [y, m, d] = day.split('-').map(Number); return ymd(new Date(y, m - 1, d - 1)); };
+// The phone decides which day it is (D36); the server only checks it is plausible.
+const validDay = d => /^\d{4}-\d{2}-\d{2}$/.test(d || '') && Math.abs(new Date(d + 'T12:00:00') - Date.now()) < 4 * 864e5;
+const photoPath = id => path.join(DATA_DIR, 'photos', id + '.jpg');
+const pendingSubs = () => db.subs.filter(s => s.status === 'pending').sort((a, b) => a.takenAt - b.takenAt);
+
+// ---- quests: taken from the bank Gemma fills ahead of time (D33), with built-in fallbacks ----
+const SQUAD_FALLBACK = [
+  'Play a ball game together in an open space.', 'Go for a walk-and-talk through a green area.',
+  'Toss a frisbee or ball around together.', 'Have a snack break together outside.',
+  'Stretch or do a light workout together in the open air.', 'Take a long walk together and chat about your week.'
 ];
-
-// ---- Gemma via Ollama ----
-async function gemma(messages, wantJson, temp = 0.4) {
-  const body = {
-    model: MODEL, messages, stream: false, keep_alive: '30m',
-    ...(wantJson ? { format: 'json' } : {}),
-    options: { temperature: temp, num_ctx: 2048 }
-  };
-  const post = b => fetch(`${OLLAMA}/api/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) });
-  let r = await post({ ...body, think: false });   // D26: skip Gemma 4's slow thinking step
-  if (r.status === 400) r = await post(body);      // this Ollama/model does not accept the flag
-  if (!r.ok) throw new Error('Ollama returned ' + r.status);
-  return (await r.json()).message.content;
-}
-
-const DETOX_FALLBACK = [
-  'Go outside and photograph the sky.',
-  'Find a tree and photograph its trunk.',
-  'Photograph something green growing outside.'
-];
-const BAD_QUEST = /\d|\b(exactly|one|two|three|four|five|six|seven|eight|nine|ten)\b/i;
-
-// Ask Gemma for one simple quest. Returns null if the answer is unusable (decision D18).
-async function makeQuestText(avoid, detox) {
-  const kind = detox
-    ? 'a short "detox" challenge that gets someone outside and away from their phone for 10 to 15 minutes'
-    : 'a short, simple photo quest that can be done outside in under 20 minutes';
-  try {
-    const out = await gemma([{ role: 'user', content:
-      `You are the Quest Master of a friends' outdoor game. Invent ONE ${kind}. It must be checkable from a single photo. ` +
-      'The judge is a small AI that CANNOT count, read text, or check exact details, so: never use numbers or counting ' +
-      '(no "two", "three", "exactly"), no rare or hard-to-find things, no brands or writing. Ask for ONE common, clearly ' +
-      'visible thing: a color, a plant, the sky, a vehicle, an animal, a shape. Good examples: "Photograph something yellow." ' +
-      '"Photograph a tree trunk." Do not repeat these: ' + avoid +
-      '\nReply with JSON only: {"quest":"<one sentence>"}' }], true);
-    const t = JSON.parse(out).quest;
-    if (typeof t === 'string' && t.trim() && t.length <= 100 && !BAD_QUEST.test(t)) return t.trim();
-  } catch (e) { console.log('Quest generation failed:', e.message); }
-  return null;
-}
-
-// One quest per group per day, generated lazily on first request.
-const inflight = {};
-function ensureQuest(g) {
-  if (g.quest && g.quest.day === today()) return Promise.resolve(g.quest);
-  if (!inflight[g.code]) {
-    inflight[g.code] = (async () => {
-      const text = (await makeQuestText((g.past || []).slice(-5).join(' | '), false)) ||
-        FALLBACK[Math.floor(Math.random() * FALLBACK.length)];
-      g.quest = { id: crypto.randomUUID(), text, day: today() };
-      g.past = [...(g.past || []), text].slice(-10);
-      save();
-      return g.quest;
-    })().finally(() => { delete inflight[g.code]; });
-  }
-  return inflight[g.code];
-}
-
 const WALK_POOL = [
   'Photograph something red.', 'Photograph something yellow.', 'Photograph a tree.', 'Photograph a flower.',
   'Photograph a bird or an animal.', 'Photograph a vehicle.', 'Photograph the sky.', 'Photograph a stone.',
   'Photograph something made of metal.', 'Photograph a fence or a gate.', 'Photograph a shadow.', 'Photograph something round.'
 ];
-
-// Ask Gemma for the walk's checkpoint targets. Anything unusable is replaced from WALK_POOL (D22).
-async function makeWalkStops(n) {
-  let list = [];
-  try {
-    const out = await gemma([{ role: 'user', content:
-      `You are the Quest Master of a friends' outdoor walk game. Invent ${n} DIFFERENT, very simple photo targets, one per checkpoint, ` +
-      'to find while walking outside. The judge is a small AI that CANNOT count, read text, or check exact details, so: never use ' +
-      'numbers or counting, no rare things, no brands or writing. Each target is one short sentence about one common, clearly visible ' +
-      'thing, like "Photograph something blue." or "Photograph a tree trunk."\nReply with JSON only: {"stops":["...", "..."]}' }], true);
-    list = JSON.parse(out).stops;
-  } catch (e) { console.log('Walk generation failed:', e.message); }
-  list = (Array.isArray(list) ? list : []).filter(t => typeof t === 'string' && t.trim() && t.length <= 80 && !BAD_QUEST.test(t)).map(t => t.trim());
-  list = [...new Set(list)].slice(0, n);
-  const pool = WALK_POOL.filter(x => !list.includes(x)).sort(() => Math.random() - 0.5);
-  while (list.length < n) list.push(pool.shift());
-  return list;
+const DETOX_FALLBACK = ['Go outside and photograph the sky.', 'Find a tree and photograph its trunk.', 'Photograph something green growing outside.'];
+const shuffle = a => a.map(v => [Math.random(), v]).sort((x, y) => x[0] - y[0]).map(x => x[1]);
+function take(kind, fallback, n, avoid = []) {
+  const out = [];
+  while (out.length < n && db.bank[kind].length) { const t = db.bank[kind].shift(); if (!avoid.includes(t) && !out.includes(t)) out.push(t); }
+  for (const t of shuffle(fallback)) if (out.length < n && !out.includes(t) && !avoid.includes(t)) out.push(t);
+  for (const t of shuffle(fallback)) if (out.length < n && !out.includes(t)) out.push(t);
+  return out;
 }
-
-// One walk per group per day. Stops are revealed to players one at a time.
-function ensureWalk(g) {
-  if (g.walk && g.walk.day === today()) return Promise.resolve(g.walk);
-  const key = 'walk:' + g.code;
-  if (!inflight[key]) {
-    inflight[key] = (async () => {
-      g.walk = { id: crypto.randomUUID(), day: today(), stops: await makeWalkStops(WALK_STOPS) };
-      save();
-      return g.walk;
-    })().finally(() => { delete inflight[key]; });
+function planFor(g, day) {
+  g.days = g.days || {};
+  if (!g.days[day]) {
+    const used = Object.values(g.days).map(d => d.quest.text);
+    g.days[day] = {
+      quest: { id: uid(), text: take('squad', SQUAD_FALLBACK, 1, used)[0] },
+      walk: { id: uid(), stops: take('stops', WALK_POOL, WALK_STOPS) },
+      detox: { id: uid(), text: take('detox', DETOX_FALLBACK, 1)[0] }
+    };
+    Object.keys(g.days).sort().slice(0, -7).forEach(k => delete g.days[k]);
+    save();
   }
-  return inflight[key];
+  return g.days[day];
+}
+const bankNeeds = () => ({ squad: Math.max(0, 8 - db.bank.squad.length), stops: Math.max(0, 15 - db.bank.stops.length), detox: Math.max(0, 8 - db.bank.detox.length) });
+function addBank(lists) {
+  for (const k of Object.keys(db.bank))
+    for (const t of (lists && lists[k]) || [])
+      if (typeof t === 'string' && t.trim() && t.length <= 110 && !BAD_QUEST.test(t) && !db.bank[k].includes(t.trim())) db.bank[k].push(t.trim());
+  save();
 }
 
-const liveStreak = p => (p.lastDay === today() || p.lastDay === yesterday()) ? p.streak : 0;
+// ---- scoring: applies one verdict from the judge to a sealed proof ----
+function togetherBonus(sub) {
+  const mates = db.subs.filter(s => s !== sub && s.group === sub.group && s.kind === 'squad' && s.refId === sub.refId && s.match &&
+    s.playerId !== sub.playerId && Math.abs(s.takenAt - sub.takenAt) <= TOGETHER_WINDOW);
+  if (!mates.length) return 0;
+  mates.filter(s => !s.togetherPaid).forEach(s => { s.togetherPaid = true; s.points += TOGETHER_BONUS; db.players[s.playerId].points += TOGETHER_BONUS; });
+  sub.togetherPaid = true;
+  return TOGETHER_BONUS;
+}
+function applyVerdict(sub, v) {
+  const p = db.players[sub.playerId];
+  const confidence = Number(v.confidence) || 0;
+  const looksRight = v.match === true && confidence >= MIN_CONFIDENCE && !(sub.kind === 'squad' && v.people === false);
+  const indoors = REQUIRE_OUTDOORS && v.outdoors === false;                 // only an explicit false blocks (D27)
+  let ok = looksRight && !indoors, caption = String(v.caption || '').slice(0, 200), points = 0;
+  if (ok && p.done[sub.key]) { ok = false; caption = 'Already completed.'; }
+  Object.assign(sub, { status: 'done', match: ok, confidence, caption, judgedAt: Date.now(), points: 0, reason: ok ? '' : (looksRight && indoors ? 'indoors' : 'nomatch') });
+  if (ok) {
+    p.done[sub.key] = true; db.hashes.push(sub.hash); db.hashes = db.hashes.slice(-2000);
+    if (sub.kind === 'squad') {
+      if (!p.lastDay || sub.day > p.lastDay) { p.streak = p.lastDay === prevDay(sub.day) ? p.streak + 1 : 1; p.lastDay = sub.day; }
+      points = 10 + Math.min(p.streak, 5) + togetherBonus(sub);              // D34
+    } else if (sub.kind === 'walk') {
+      points = WALK_POINTS;                                                  // D35
+      const n = Array.from({ length: WALK_STOPS }, (_, k) => p.done[`walk:${sub.refId}:${k}`]).filter(Boolean).length;
+      if (n >= WALK_STOPS) points += WALK_BONUS;
+    } else points = DETOX_POINTS;                                            // D21
+    p.points += points; sub.points = points;
+  }
+  fs.rm(photoPath(sub.id), { force: true }, () => {});                       // D37: photo deleted once judged
+  if (db.subs.length > 600) db.subs = pendingSubs().concat(db.subs.filter(s => s.status === 'done').slice(-400));
+  save();
+}
+
+// ---- local judge loop (MODE=local) ----
+let judging = false, filling = false;
+async function judgeNext() {
+  if (judging) return;
+  const sub = pendingSubs().find(s => (s.retryAt || 0) <= Date.now());
+  if (!sub) return;
+  judging = true;
+  try {
+    if (!fs.existsSync(photoPath(sub.id))) applyVerdict(sub, { match: false, caption: 'The photo was lost before judging.' });
+    else {
+      const image = fs.readFileSync(photoPath(sub.id)).toString('base64');
+      applyVerdict(sub, await (sub.kind === 'squad' ? judgeSquad : judgeObject)(sub.text, image));
+      console.log(`Judged ${sub.kind} from ${sub.player}: ${sub.match ? 'pass' : 'fail'}`);
+    }
+  } catch (e) {
+    if (e.parse && (sub.attempts = (sub.attempts || 0) + 1) >= 3) applyVerdict(sub, { match: false, caption: 'The judge could not read this photo.' });
+    else sub.retryAt = Date.now() + 10000;
+    console.log('Judge problem:', e.message);
+  } finally { judging = false; if (pendingSubs().some(s => (s.retryAt || 0) <= Date.now())) setImmediate(judgeNext); }
+}
+async function fillBank() {
+  if (filling || !Object.values(bankNeeds()).some(n => n > 0)) return;
+  filling = true;
+  try { addBank(await makeBank(bankNeeds())); console.log('Quest bank refilled.'); }
+  catch (e) { console.log('Bank refill failed:', e.message); }
+  finally { filling = false; }
+}
 
 // ---- app ----
 const app = express();
@@ -137,21 +148,19 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 function newPlayer(name, code) {
-  const id = crypto.randomUUID();
-  db.players[id] = { id, name, group: code, points: 0, streak: 0, lastDay: null, doneQuest: null, screenHours: null, screenDay: null, detox: null };
+  const id = uid();
+  db.players[id] = { id, name, group: code, points: 0, streak: 0, lastDay: null, done: {}, screen: {} };
   return id;
 }
-
 app.post('/api/groups', (req, res) => {
   const name = clean(req.body.name), player = clean(req.body.player);
   if (!name || !player) return res.status(400).json({ error: 'Enter a group name and your name.' });
   const code = crypto.randomBytes(3).toString('hex').slice(0, 5).toUpperCase();
-  db.groups[code] = { code, name, quest: null, past: [], createdAt: Date.now() };
+  db.groups[code] = { code, name, days: {}, createdAt: Date.now() };
   const playerId = newPlayer(player, code);
   save();
   res.json({ code, playerId });
 });
-
 app.post('/api/join', (req, res) => {
   const code = String(req.body.code || '').trim().toUpperCase(), player = clean(req.body.player);
   if (!db.groups[code]) return res.status(404).json({ error: 'Group not found. Check the code.' });
@@ -161,128 +170,129 @@ app.post('/api/join', (req, res) => {
   res.json({ code, playerId });
 });
 
-app.get('/api/groups/:code', async (req, res) => {
+function myView(p, plan, day) {
+  const subs = db.subs.filter(s => s.playerId === p.id);
+  const state = key => p.done[key] ? 'pass' : subs.some(s => s.key === key && s.status === 'pending') ? 'wait' : 'none';
+  return {
+    squad: state('squad:' + plan.quest.id),
+    walk: plan.walk.stops.map((_, k) => state(`walk:${plan.walk.id}:${k}`)),
+    detox: state('detox:' + plan.detox.id),
+    screenHours: p.screen[day] === undefined ? null : p.screen[day],
+    proofs: subs.slice(-8).reverse().map(s => ({ id: s.id, kind: s.kind, text: s.text, status: s.status, match: s.match, caption: s.caption, points: s.points, reason: s.reason }))
+  };
+}
+app.get('/api/groups/:code', (req, res) => {
   const g = db.groups[req.params.code];
   if (!g) return res.status(404).json({ error: 'Group not found.' });
-  const [quest, walk] = await Promise.all([ensureQuest(g), ensureWalk(g)]);
-  const players = Object.values(db.players).filter(p => p.group === g.code)
-    .map(p => ({ id: p.id, name: p.name, points: p.points, streak: liveStreak(p), doneToday: p.doneQuest === quest.id, walk: p.walk && p.walk.id === walk.id ? p.walk.done : 0 }))
-    .sort((a, b) => b.points - a.points);
-  const feed = db.subs.filter(s => s.group === g.code).slice(-15).reverse();
+  const day = validDay(req.query.day) ? req.query.day : serverDay();
+  const plan = planFor(g, day);
   const me = db.players[req.query.player];
-  const d = me && me.detox && me.detox.day === today() ? me.detox : null;
-  const mine = me && me.group === g.code ? {
-    limit: SCREEN_LIMIT,
-    screenHours: me.screenDay === today() ? me.screenHours : null,
-    detox: d ? { text: d.text, done: !!d.done } : null,
-    walk: (() => {
-      const done = me.walk && me.walk.id === walk.id ? me.walk.done : 0;
-      return { total: walk.stops.length, done, current: done < walk.stops.length ? walk.stops[done] : null };
-    })() } : null;
-  res.json({ name: g.name, code: g.code, quest: { text: quest.text }, players, walkTotal: walk.stops.length, feed, mine });
+  const mine = me && me.group === g.code ? myView(me, plan, day) : null;
+  const live = p => (p.lastDay === day || p.lastDay === prevDay(day)) ? p.streak : 0;
+  const walkDone = p => plan.walk.stops.filter((_, k) => p.done[`walk:${plan.walk.id}:${k}`]).length;
+  res.json({
+    name: g.name, code: g.code, day, mode: MODE,
+    judge: { online: MODE === 'local' || Date.now() - db.workerSeen < 120000, waiting: pendingSubs().filter(s => s.group === g.code).length },
+    quest: { id: plan.quest.id, text: plan.quest.text },
+    walk: { total: WALK_STOPS, stops: mine ? plan.walk.stops : [] },
+    detox: { text: mine ? plan.detox.text : '', limit: SCREEN_LIMIT },
+    players: Object.values(db.players).filter(p => p.group === g.code)
+      .map(p => ({ id: p.id, name: p.name, points: p.points, streak: live(p), squad: !!p.done['squad:' + plan.quest.id], walk: walkDone(p) }))
+      .sort((a, b) => b.points - a.points),
+    feed: db.subs.filter(s => s.group === g.code && s.status === 'done').slice(-15).reverse()
+      .map(s => ({ player: s.player, kind: s.kind, match: s.match, confidence: s.confidence, caption: s.caption, points: s.points })),
+    mine
+  });
 });
 
-app.post('/api/groups/:code/reroll', async (req, res) => {
+app.post('/api/groups/:code/reroll', (req, res) => {
   const g = db.groups[req.params.code];
   if (!g) return res.status(404).json({ error: 'Group not found.' });
-  if (g.quest && Object.values(db.players).some(p => p.group === g.code && p.doneQuest === g.quest.id))
-    return res.status(400).json({ error: 'Someone already finished this quest, so it cannot be swapped.' });
-  g.quest = null;
-  const q = await ensureQuest(g);
-  res.json({ quest: q.text });
+  const plan = planFor(g, validDay(req.body.day) ? req.body.day : serverDay());
+  if (db.subs.some(s => s.group === g.code && s.refId === plan.quest.id && (s.status === 'pending' || s.match)))
+    return res.status(400).json({ error: 'Someone already sent a photo for this quest, so it cannot be swapped.' });
+  plan.quest = { id: uid(), text: take('squad', SQUAD_FALLBACK, 1, Object.values(g.days).map(d => d.quest.text))[0] };
+  save();
+  res.json({ quest: plan.quest.text });
 });
 
-// Self-reported screen time. At or over the limit, the player gets a personal detox quest (D12, D20, D21).
-app.post('/api/screentime', async (req, res) => {
+app.post('/api/screentime', (req, res) => {
   const p = db.players[req.body.playerId];
   if (!p) return res.status(404).json({ error: 'Player not found. Rejoin the group.' });
   const hours = Number(req.body.hours);
-  if (req.body.hours === '' || !(hours >= 0 && hours <= 24)) return res.status(400).json({ error: 'Enter hours between 0 and 24.' });
-  p.screenHours = hours; p.screenDay = today();
-  const over = hours >= SCREEN_LIMIT;
-  if (over && !(p.detox && p.detox.day === today())) {
-    const g = db.groups[p.group];
-    const text = (await makeQuestText(g.quest ? g.quest.text : '', true)) ||
-      DETOX_FALLBACK[Math.floor(Math.random() * DETOX_FALLBACK.length)];
-    p.detox = { id: crypto.randomUUID(), text, day: today(), done: false };
-  }
+  if (req.body.hours === '' || req.body.hours == null || !(hours >= 0 && hours <= 24)) return res.status(400).json({ error: 'Enter hours between 0 and 24.' });
+  p.screen[validDay(req.body.day) ? req.body.day : serverDay()] = hours;
   save();
-  res.json({ over, limit: SCREEN_LIMIT });
+  res.json({ over: hours >= SCREEN_LIMIT, limit: SCREEN_LIMIT });
 });
 
-app.post('/api/submit', async (req, res) => {
-  const p = db.players[req.body.playerId];
+// A sealed proof: stored as pending, judged later (D31). Safe to send twice (same photo returns the same id).
+app.post('/api/submit', (req, res) => {
+  const { playerId, kind, image, day } = req.body;
+  const p = db.players[playerId];
   if (!p) return res.status(404).json({ error: 'Player not found. Rejoin the group.' });
-  const image = req.body.image;
-  if (!image || typeof image !== 'string') return res.status(400).json({ error: 'No photo received.' });
-  const g = db.groups[p.group];
-  const detox = req.body.kind === 'detox', walk = req.body.kind === 'walk';
-  let target;
-  if (detox) {
-    if (!p.detox || p.detox.day !== today()) return res.status(400).json({ error: 'You have no detox quest today.' });
-    if (p.detox.done) return res.status(400).json({ error: 'You already finished today\'s detox quest.' });
-    target = p.detox;
-  } else if (walk) {
-    const w = await ensureWalk(g);
-    if (!p.walk || p.walk.id !== w.id) p.walk = { id: w.id, done: 0 };
-    if (p.walk.done >= w.stops.length) return res.status(400).json({ error: 'You already finished today\'s walk.' });
-    target = { text: w.stops[p.walk.done] };
+  if (!['squad', 'walk', 'detox'].includes(kind)) return res.status(400).json({ error: 'Unknown quest type.' });
+  if (!validDay(day)) return res.status(400).json({ error: 'Your phone clock looks wrong. Check the date and time.' });
+  if (typeof image !== 'string' || image.length < 100 || image.length > 4e6) return res.status(400).json({ error: 'That photo could not be used.' });
+  const g = db.groups[p.group], plan = planFor(g, day);
+  let ref;
+  if (kind === 'squad') ref = { key: 'squad:' + plan.quest.id, refId: plan.quest.id, text: plan.quest.text };
+  else if (kind === 'walk') {
+    const k = Number(req.body.stopIndex);
+    if (!Number.isInteger(k) || k < 0 || k >= WALK_STOPS) return res.status(400).json({ error: 'Unknown walk stop.' });
+    ref = { key: `walk:${plan.walk.id}:${k}`, refId: plan.walk.id, text: plan.walk.stops[k] };
   } else {
-    target = await ensureQuest(g);
-    if (p.doneQuest === target.id) return res.status(400).json({ error: 'You already finished today\'s quest.' });
+    if (!(p.screen[day] >= SCREEN_LIMIT)) return res.status(400).json({ error: `Log ${SCREEN_LIMIT} or more hours of screen time to unlock the detox quest.` });
+    ref = { key: 'detox:' + plan.detox.id, refId: plan.detox.id, text: plan.detox.text };
   }
+  if (p.done[ref.key]) return res.status(400).json({ error: 'You already completed this one.' });
   const hash = crypto.createHash('sha1').update(image).digest('hex');
+  const same = db.subs.find(s => s.playerId === p.id && s.hash === hash && s.status === 'pending');
+  if (same) return res.json({ queued: true, id: same.id });
   if (db.hashes.includes(hash)) return res.status(400).json({ error: 'That photo was already used. Take a new one.' });
-
-  let v;
-  try {
-    v = JSON.parse(await gemma([{ role: 'user', images: [image], content:
-      `Quest: "${target.text}"\n` +
-      'First list the main objects you can clearly see. Do not guess what kind of place it is or what people are doing; name only what is visible.\n' +
-      'Then decide whether the photo clearly satisfies the quest.\n' +
-      'Also say whether it was taken outdoors. Answer true if there is any sign of being outside (sky, ground, grass, plants, an outdoor wall or street, daylight); close-ups of things outside count as outdoors. Answer false only if it is clearly inside a room.\n' +
-      'Reply with JSON only: {"seen": ["..."], "match": true or false, "confidence": 0-100, "outdoors": true or false, "caption": "one friendly sentence naming only what you can see"}' }], true, 0.2));
-  } catch (e) {
-    console.log('Judge failed:', e.message);
-    return res.status(502).json({ error: 'The judge (Gemma) did not answer. Is Ollama running?' });
-  }
-  const confidence = Number(v.confidence) || 0;
-  const looksRight = v.match === true && confidence >= MIN_CONFIDENCE;
-  const indoors = REQUIRE_OUTDOORS && v.outdoors === false;   // only an explicit "false" blocks (D27)
-  const match = looksRight && !indoors;
-  const caption = String(v.caption || '').slice(0, 200);
-  let points = 0;
-
-  if (match) {
-    db.hashes.push(hash);
-    if (detox) {
-      points = 15; p.detox.done = true;                       // flat reward, no streak or first bonus (D21)
-    } else if (walk) {
-      p.walk.done++;
-      points = WALK_POINTS + (p.walk.done >= WALK_STOPS ? WALK_BONUS : 0);   // D23
-    } else {
-      const first = !db.subs.some(s => s.group === g.code && s.day === today() && s.match && (!s.kind || s.kind === 'quest'));
-      p.streak = p.lastDay === yesterday() ? p.streak + 1 : 1;
-      p.lastDay = today();
-      p.doneQuest = target.id;
-      points = 10 + (first ? 5 : 0) + Math.min(p.streak, 5);
-    }
-    p.points += points;
-  }
-  db.subs.push({ group: g.code, player: p.name, kind: detox ? 'detox' : walk ? 'walk' : 'quest', day: today(), match, confidence, caption, points, at: Date.now() });
-  db.subs = db.subs.slice(-300);
+  if (db.subs.some(s => s.playerId === p.id && s.key === ref.key && s.status === 'pending')) return res.status(400).json({ error: 'A photo for this is already waiting for the judge.' });
+  const id = uid();
+  fs.writeFileSync(photoPath(id), Buffer.from(image, 'base64'));
+  const takenAt = Math.min(Number(req.body.takenAt) || Date.now(), Date.now() + 5 * 60000);
+  db.subs.push({ id, group: g.code, playerId: p.id, player: p.name, kind, day, key: ref.key, refId: ref.refId, text: ref.text, hash, takenAt, status: 'pending' });
   save();
-  res.json({ match, confidence, caption, points,
-    message: match ? `+${points} points. ${caption}` : (looksRight && indoors ? 'That looks like it was taken indoors. Take it outside and try again.' : `Not quite. ${caption}`) });
+  res.json({ queued: true, id });
+  if (MODE === 'local') setImmediate(judgeNext);
 });
+
+// ---- endpoints for the home judge (worker.js), protected by WORKER_KEY ----
+const auth = (req, res, next) => (WORKER_KEY && req.get('x-worker-key') === WORKER_KEY) ? next() : res.status(401).json({ error: 'Worker key required.' });
+app.get('/api/worker/pending', auth, (req, res) => {
+  db.workerSeen = Date.now();
+  res.json({ proofs: pendingSubs().slice(0, 20).map(s => ({ id: s.id, kind: s.kind, text: s.text })), bank: bankNeeds() });
+});
+app.get('/api/worker/photo/:id', auth, (req, res) => {
+  if (!/^[0-9a-f-]{36}$/.test(req.params.id) || !fs.existsSync(photoPath(req.params.id))) return res.status(404).json({ error: 'No such photo.' });
+  res.type('image/jpeg').sendFile(photoPath(req.params.id));
+});
+app.post('/api/worker/verdict/:id', auth, (req, res) => {
+  const sub = db.subs.find(s => s.id === req.params.id && s.status === 'pending');
+  if (!sub) return res.status(404).json({ error: 'No pending proof with that id.' });
+  applyVerdict(sub, req.body || {});
+  res.json({ ok: true, match: sub.match, points: sub.points });
+});
+app.post('/api/worker/bank', auth, (req, res) => { addBank(req.body); res.json({ ok: true, bank: bankNeeds() }); });
 
 app.get('/api/health', async (req, res) => {
-  try { const r = await fetch(`${OLLAMA}/api/tags`); res.json({ server: 'ok', ollama: r.ok ? 'ok' : 'error', model: MODEL }); }
-  catch { res.json({ server: 'ok', ollama: 'unreachable', model: MODEL }); }
+  if (MODE === 'hub') return res.json({ server: 'ok', mode: MODE, judgeSeenSecondsAgo: db.workerSeen ? Math.round((Date.now() - db.workerSeen) / 1000) : null });
+  try { const r = await fetch((process.env.OLLAMA_URL || 'http://localhost:11434') + '/api/tags'); res.json({ server: 'ok', mode: MODE, ollama: r.ok ? 'ok' : 'error', model: MODEL }); }
+  catch { res.json({ server: 'ok', mode: MODE, ollama: 'unreachable', model: MODEL }); }
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`TouchGrass Squad running. Model: ${MODEL}`);
+  console.log(`TouchGrass Squad running in ${MODE} mode.${MODE === 'local' ? ' Model: ' + MODEL : ''}`);
   for (const list of Object.values(os.networkInterfaces()))
     for (const i of list) if (i.family === 'IPv4' && !i.internal) console.log(`  Open on your phone: http://${i.address}:${PORT}`);
+  if (MODE === 'hub') { if (!WORKER_KEY) console.log('WARNING: WORKER_KEY is not set, so no home judge can connect.'); return; }
+  gemma([{ role: 'user', content: 'Reply with the word ok.' }], false)             // D28
+    .then(() => console.log('Gemma is warmed up.'))
+    .catch(e => console.log('Warm-up failed (is Ollama running?):', e.message));
+  setInterval(judgeNext, 2000);
+  setInterval(() => { if (!pendingSubs().length) fillBank(); }, 60000);
+  setTimeout(fillBank, 5000);
 });

@@ -2,64 +2,80 @@
 
 ## Architecture
 
+Two ways to run the same code (D32):
+
 ```
- Phone browser (public/index.html)
-        |  HTTP + JSON over local Wi-Fi / hotspot
-        v
- Laptop: Node + Express (server.js, port 3000)
-        |-- data.json  (groups, players, submissions, photo hashes)
-        '-- HTTP to Ollama (localhost:11434)
-                 '-- gemma4:e4b-it-q4_K_M  (quests + photo judging)
+LOCAL MODE (default): everything on one laptop
+ Phone browser --HTTP--> server.js --> judge.js --> Ollama (Gemma)
+                          '-- data.json + temp photos
+
+HUB MODE (deployed link): the hosted copy has no AI
+ Phone browser --HTTPS--> hosted server.js (MODE=hub)
+                              ^  outgoing HTTPS calls only
+ Laptop: worker.js --> judge.js --> Ollama (Gemma)
 ```
 
-Nothing leaves the laptop. No cloud calls.
+Files: `server.js` (app and API), `judge.js` (all Gemma prompts), `worker.js` (home judge for hub mode), `public/index.html` (whole front end), `public/sw.js` (offline page cache), `public/fonts/` (bundled fonts), `check-gemma.js` and `test-judge.js` (dev tools).
 
-## Endpoints
+## The sealed-proof lifecycle (D31)
 
-| Method | Path | Body / params | Returns | Notes |
-|--------|------|---------------|---------|-------|
-| POST | `/api/groups` | `{name, player}` | `{code, playerId}` | Creates group with a 5-char code and the first player. |
-| POST | `/api/join` | `{code, player}` | `{code, playerId}` | 404 if code unknown. |
-| GET | `/api/groups/:code` | optional `?player=<id>` | `{name, code, quest:{text}, players[], walkTotal, feed[], mine}` | Creates today's quest on first call (Gemma, with fallback). Phones poll this every 6 s. |
-| POST | `/api/groups/:code/reroll` | none | `{quest}` | Replaces today's quest with a new one. 400 if anyone in the group already completed the current quest. |
-| POST | `/api/screentime` | `{playerId, hours}` | `{over, limit}` | Saves today's self-reported hours. If `hours >= limit`, creates the player's detox quest (once per day). |
-| POST | `/api/submit` | `{playerId, image, kind}` (base64 JPEG, no prefix; `kind` is `quest` by default, `detox` or `walk`) | `{match, confidence, caption, points, message}` | Sends photo to Gemma. Errors: 400 duplicate or already done, 502 judge unavailable. |
-| GET | `/api/health` | none | `{server, ollama, model}` | Quick check that Ollama is reachable. |
+1. **Phone, any time:** photo is shrunk to 512 px and saved in the phone's `queue` (localStorage) with `kind`, `day`, `takenAt` and, for walks, `stopIndex`.
+2. **Phone, when a connection exists:** the queue is sent in order to `POST /api/submit` (screen-time items go to `/api/screentime`). A connection error keeps everything and retries later. A server rejection (for example a duplicate photo) drops that item and shows the message.
+3. **Server:** stores the photo as a temp file and the proof as `pending`. Sending the same photo twice returns the same id.
+4. **Judge** (in-process in local mode, `worker.js` in hub mode): judges oldest `takenAt` first, then calls `applyVerdict`.
+5. **Server `applyVerdict`:** sets the result, awards points, saves, and deletes the temp photo (D37).
+6. **Phone:** the next `GET /api/groups/:code` shows the result under "Your envelopes". The page also draws from a cached copy of the last plan when offline.
 
-## Data model (data.json)
+## Endpoints (phone)
 
-- `groups[code]`: `{code, name, quest:{id,text,day}, past[], walk:{id,day,stops[]}, createdAt}`
-- `players[id]`: `{id, name, group, points, streak, lastDay, doneQuest, screenHours, screenDay, detox:{id,text,day,done}, walk:{id,done}}`
-- `subs[]`: `{group, player, day, match, confidence, caption, points, at}` (last 300 kept)
-- `hashes[]`: SHA-1 of every passed photo, used to reject reuse
+| Method | Path | Body / params | Returns |
+|--------|------|---------------|---------|
+| POST | `/api/groups` | `{name, player}` | `{code, playerId}` |
+| POST | `/api/join` | `{code, player}` | `{code, playerId}` |
+| GET | `/api/groups/:code` | `?player=<id>&day=YYYY-MM-DD` | the day's plan, leaderboard, feed, judge status and `mine` (see below) |
+| POST | `/api/groups/:code/reroll` | `{day}` | `{quest}`. 400 if anyone already sent a photo for the current squad quest. |
+| POST | `/api/screentime` | `{playerId, hours, day}` | `{over, limit}` |
+| POST | `/api/submit` | `{playerId, kind, day, takenAt, image, stopIndex?}` | `{queued, id}`. `kind` is `squad`, `walk` or `detox`. 400s: duplicate photo, already done, detox without enough screen time, unknown stop. |
+| GET | `/api/health` | none | mode and Ollama status |
 
-## Flows
+`mine` holds `squad`, `walk[5]` and `detox` states (`none`, `wait` or `pass`), `screenHours` and the last 8 proofs with status and caption.
 
-**Daily quest rules:** one verifiable thing, no counting or numbers (D18). Generated text with digits or number words is discarded for a fallback. The "Swap quest" button calls the reroll endpoint (D19).
+## Endpoints (home judge, need header `x-worker-key`)
 
-**Daily quest:** first `GET /api/groups/:code` of the day, then Gemma is asked for one verifiable quest as JSON, then it is saved on the group. If Gemma fails or the answer is invalid, a fallback quest is used. Requests that arrive at the same moment share one generation.
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/worker/pending` | up to 20 pending proofs (`id`, `kind`, `text`) and how many bank quests are needed. Also marks the judge as online. |
+| GET | `/api/worker/photo/:id` | the temp photo |
+| POST | `/api/worker/verdict/:id` | `{match, confidence, outdoors, people, caption}` |
+| POST | `/api/worker/bank` | `{squad[], stops[], detox[]}` new quests for the bank |
 
-**Submit a photo:** phone shrinks photo to 512 px, sends `/api/submit`, server checks player, already-done and duplicate hash, then asks Gemma (temperature 0.2) to list what it sees and decide, returning `{seen[], match, confidence, outdoors, caption}`. `seen` is not used; the other fields are. Thinking is switched off in the request (D26). A pass needs match, confidence of 60 or more and, unless `REQUIRE_OUTDOORS=0`, no explicit `outdoors: false` (D27); an indoor photo gets a specific "take it outside" message. On a pass the server updates streak and points, stores the hash, and logs to `subs`. Failed attempts are logged but not scored and can be retried.
+## Data model (`data.json`)
 
-**Streak:** a pass on the day after the previous pass continues the streak, otherwise it restarts at 1. The leaderboard shows 0 if the player missed yesterday and today.
+- `groups[code]`: `{code, name, createdAt, days{ "YYYY-MM-DD": {quest:{id,text}, walk:{id,stops[5]}, detox:{id,text}} }}` (last 7 days kept)
+- `players[id]`: `{id, name, group, points, streak, lastDay, done{key:true}, screen{day:hours}}`. Keys in `done` look like `squad:<questId>`, `walk:<walkId>:<k>` and `detox:<detoxId>`.
+- `subs[]`: proofs: `{id, group, playerId, player, kind, day, key, refId, text, hash, takenAt, status, match, confidence, caption, points, reason, togetherPaid}`
+- `bank`: `{squad[], stops[], detox[]}`, `hashes[]`, `workerSeen`
+- `photos/<id>.jpg`: temp files, deleted once judged
 
-**Scoring:** 10 + 5 if first in group today + min(streak, 5). A detox quest is a flat 15 and leaves streak and the first bonus alone. Each walk stop is 4 points, plus 10 for finishing all five (maximum 30 a day).
+## Rules
 
-**Walk challenge:** the first `GET /api/groups/:code` of the day also asks Gemma for 5 simple targets, validated with the D18 rules and topped up from a built-in pool if needed. `mine.walk` shows only the player's current stop (`done` of `total`). A photo sent with `kind: "walk"` is judged against that stop. A pass moves the player to the next stop, and the fifth pass adds the completion bonus. The leaderboard shows each player's progress.
-
-**Screen-time nudge:** the player types today's hours (`POST /api/screentime`). At or above `SCREEN_LIMIT` the server asks Gemma for a detox quest (same rules as D18, fallback list if unusable). `GET /api/groups/:code?player=<id>` returns it under `mine`. The photo is submitted with `kind: "detox"` and judged like any other.
+- **Judging:** squad quests use `judgeSquad` (people visible, activity fits, outdoors). Walk stops and detox use `judgeObject`. A pass needs `match`, confidence of 60 or more and no explicit `outdoors: false` (D27). Squad also needs `people` not false. Thinking is switched off (D26).
+- **Squad quest:** 10 + streak bonus (min(streak, 5)). **Together bonus** +10 each when two players' passed photos for the same quest were taken within 90 minutes of each other (D34).
+- **Streak:** a passed squad quest on the day after your last one continues it, otherwise it restarts at 1. Older proofs judged late do not change it.
+- **Walk:** 4 per stop, +10 when all five passed. Stops are independent (D35).
+- **Detox:** 15 points. Needs 3 or more logged screen hours for that day (D20).
+- **Quest bank:** `take()` removes a quest from the bank for each new day's plan. Gemma refills the bank when it is low (D33).
 
 ## Config (environment variables, all optional)
 
-`MODEL` (default `gemma4:e4b-it-q4_K_M`), `OLLAMA_URL` (default `http://localhost:11434`), `PORT` (default 3000), `SCREEN_LIMIT` (default 3 hours), `REQUIRE_OUTDOORS` (on by default; set to `0` to turn off).
+`MODE` (`local` or `hub`), `PORT` (3000), `DATA_DIR` (where `data.json` and photos live; point it at a persistent disk when hosting), `WORKER_KEY` (required in hub mode), `MODEL` (default `gemma4:e4b-it-q4_K_M`), `OLLAMA_URL`, `SCREEN_LIMIT` (3), `REQUIRE_OUTDOORS` (`0` turns the outdoors check off).
+Worker: `HUB_URL` and `WORKER_KEY`.
 
 ## Dev tools
 
-- `check-gemma.js <photo>`: sends one photo to Gemma and prints a free-form description. Sanity check only, not the real judge.
-- `test-judge.js "<quest>" <passFolder> <failFolder>`: runs the judge prompt on two folders of photos and prints how many were judged correctly.
+- `check-gemma.js <photo>`: one free-form description from Gemma.
+- `test-judge.js "<quest>" <passFolder> <failFolder>`: runs the real object judge on two folders and prints accuracy and seconds per photo.
 
 ## Known limits
 
-Gemma can be fooled by a photo of a screen. Small models can invent details in captions, so the judge prompt tells it to name only visible things.
-
-Same-network only. No login (a player id lives in the browser's localStorage). Weekly recap and the Mastra agent are not built yet. Walk distance is not verified (D11), so stop numbers are an honor system. Screen time is self-reported. The failed-photo response omits the confidence number (see D16).
+Service workers need HTTPS (or localhost), so offline page caching works on a hosted deployment, not on a plain `http://` laptop address. Together bonus uses phone clocks. A small model cannot count and can be fooled by a photo of a screen. Do-it quests and photo duels are not built yet (D38). Walk distance is not measured.

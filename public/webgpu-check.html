@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WebGPU + storage check</title>
+<style>
+body{font:16px/1.5 system-ui,sans-serif;margin:16px auto;max-width:520px;padding:0 4px;background:#f3f2ea;color:#12201d}
+h1{font-size:1.5rem;margin:0 0 8px}
+pre{background:#fff;border:2px solid #12201d;padding:12px;white-space:pre-wrap;word-break:break-word;font-size:.85rem}
+button{font:inherit;font-weight:700;padding:12px;margin:5px 0;width:100%;border:2px solid #12201d;background:#ea857c;box-shadow:3px 3px 0 #12201d}
+button.alt{background:#fff}
+p{margin:6px 0;color:#5b6b67;font-size:.9rem}
+</style>
+</head>
+<body>
+<h1>Phone check: WebGPU and storage</h1>
+<p>Open this on your phone over HTTPS, on Wi-Fi. Then screenshot the box below.</p>
+<pre id="out">Running…</pre>
+<p>Can this browser keep a big model offline? The tests below store dummy data in the browser cache. A 2 GB test can crash the tab on some phones, so start small.</p>
+<button data-mb="500">Test saving 500 MB</button>
+<button data-mb="1000">Test saving 1 GB</button>
+<button data-mb="2000">Test saving 2 GB</button>
+<button id="clear" class="alt">Delete test data</button>
+<script>
+const out = document.querySelector('#out'), lines = [];
+const log = t => { lines.push(t); out.textContent = lines.join('\n'); };
+const mb = n => Math.round(n / 1048576) + ' MB';
+async function info() {
+  log('Secure page (HTTPS or localhost): ' + window.isSecureContext);
+  log('Browser: ' + navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 100));
+  if (!navigator.gpu) log('WebGPU: NOT available (it needs HTTPS and a supported browser).');
+  else {
+    try {
+      const a = await navigator.gpu.requestAdapter();
+      if (!a) log('WebGPU: present, but no GPU adapter was given.');
+      else {
+        const i = a.info || (a.requestAdapterInfo ? await a.requestAdapterInfo() : {});
+        log('WebGPU: YES. GPU: ' + ([i.vendor, i.architecture, i.description].filter(Boolean).join(' ') || 'unknown'));
+        log('Biggest GPU buffer: ' + mb(a.limits.maxBufferSize) + ' | biggest storage binding: ' + mb(a.limits.maxStorageBufferBindingSize));
+      }
+    } catch (e) { log('WebGPU error: ' + e.message); }
+  }
+  if (navigator.storage && navigator.storage.estimate) {
+    const e = await navigator.storage.estimate();
+    log('Storage this site may use: ' + mb(e.quota) + ' (already used ' + mb(e.usage) + ')');
+    if (navigator.storage.persist) log('Persistent storage granted: ' + ((await navigator.storage.persisted()) || (await navigator.storage.persist())));
+  } else log('Storage estimate: not supported here.');
+}
+async function test(n) {
+  log('--- Saving ' + n + ' MB in the browser cache…');
+  try {
+    const before = (await navigator.storage.estimate()).usage;
+    const c = await caches.open('webgpu-check');
+    let sent = 0;
+    const body = new ReadableStream({ pull(ctl) { if (sent >= n) return ctl.close(); sent++; ctl.enqueue(new Uint8Array(1048576)); } });
+    await c.put('/test-' + n, new Response(body));
+    const after = (await navigator.storage.estimate()).usage;
+    log('Saved. Storage grew by ' + mb(after - before) + '. Found again: ' + !!(await c.match('/test-' + n)));
+    if (after - before < n * 1048576 * 0.9) log('WARNING: much less was stored than requested. The browser may have dropped it.');
+  } catch (e) { log('FAILED: ' + e.name + ' ' + e.message); }
+}
+document.querySelectorAll('[data-mb]').forEach(b => b.onclick = () => test(Number(b.dataset.mb)));
+document.querySelector('#clear').onclick = async () => { await caches.delete('webgpu-check'); log('Test data deleted.'); };
+info();
+</script>
+</body>
+</html>

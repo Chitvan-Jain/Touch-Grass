@@ -1,7 +1,7 @@
 {
-  "name": "touchgrass-squad",
+  "name": "grassroots",
   "version": "0.3.0",
-  "description": "Offline-first friends-vs-friends outdoor quests, judged by a local Gemma model.",
+  "description": "Grassroots: offline-first outdoor quests for friends, judged by a local Gemma model.",
   "main": "server.js",
   "engines": { "node": ">=18" },
   "scripts": { "start": "node server.js", "worker": "node worker.js" },

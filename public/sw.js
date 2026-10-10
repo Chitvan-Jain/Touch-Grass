@@ -1,5 +1,5 @@
 // Keeps the app page and fonts on the phone so it opens with no signal (D31). API calls are never cached.
-const C = 'tgs-v1';
+const C = 'grassroots-v1';
 const FILES = ['/', '/fonts/barlow-condensed-latin-700-normal.woff2', '/fonts/barlow-condensed-latin-800-normal.woff2',
   '/fonts/space-mono-latin-400-normal.woff2', '/fonts/space-mono-latin-700-normal.woff2', '/fonts/inter-latin-400-normal.woff2', '/fonts/inter-latin-600-normal.woff2'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(C).then(c => Promise.all(FILES.map(u => c.add(u).catch(() => {}))))); self.skipWaiting(); });

@@ -1,4 +1,4 @@
-// TouchGrass Squad server. See flow.md (architecture) and decision.md (why).
+// Grassroots server. See flow.md (architecture) and decision.md (why).
 // MODE=local (default): everything on one machine, judging happens in this process.
 // MODE=hub: hosted copy with no AI. worker.js on your laptop fetches photos, judges them and posts verdicts (D32).
 const express = require('express');
@@ -285,7 +285,7 @@ app.get('/api/health', async (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`TouchGrass Squad running in ${MODE} mode.${MODE === 'local' ? ' Model: ' + MODEL : ''}`);
+  console.log(`Grassroots running in ${MODE} mode.${MODE === 'local' ? ' Model: ' + MODEL : ''}`);
   for (const list of Object.values(os.networkInterfaces()))
     for (const i of list) if (i.family === 'IPv4' && !i.internal) console.log(`  Open on your phone: http://${i.address}:${PORT}`);
   if (MODE === 'hub') { if (!WORKER_KEY) console.log('WARNING: WORKER_KEY is not set, so no home judge can connect.'); return; }

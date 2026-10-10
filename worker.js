@@ -1,4 +1,4 @@
-// Home judge for a hosted TouchGrass Squad (MODE=hub). Run on the laptop that has Ollama.
+// Home judge for a hosted Grassroots (MODE=hub). Run on the laptop that has Ollama.
 //   set HUB_URL=https://your-app.example.com
 //   set WORKER_KEY=the-same-secret-as-the-server
 //   node worker.js

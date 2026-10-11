@@ -15,7 +15,7 @@ HUB MODE (deployed link): the hosted copy has no AI
  Laptop: worker.js --> judge.js --> Ollama (Gemma)
 ```
 
-Files: `server.js` (app and API), `judge.js` (all Gemma prompts), `worker.js` (home judge for hub mode), `public/index.html` (whole front end), `public/sw.js` (offline page cache), `public/fonts/` (bundled fonts), `check-gemma.js` and `test-judge.js` (dev tools).
+Files: `server.js` (app and API), `judge.js` (all Gemma prompts), `worker.js` (home judge for hub mode), `public/index.html` (whole front end), `public/sw.js` (offline page cache), `public/fonts/` (bundled fonts), `public/manifest.webmanifest` and `public/icons/` (make the app installable, D40), `check-gemma.js` and `test-judge.js` (dev tools).
 
 ## The sealed-proof lifecycle (D31)
 

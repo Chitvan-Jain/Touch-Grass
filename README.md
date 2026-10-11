@@ -6,8 +6,7 @@
 
 Built for the DEV Hacktoberfest Open-Source AI Challenge, Week 1: Touch Grass.
 
-> Screenshots: add yours to `docs/screenshots/` and link them here.
-> Live demo: `<your-render-url>` (judging only happens while the home judge is running, see [Limitations](#limitations)).
+> Live demo: `https://grassroots-488t.onrender.com` (judging only happens while the home judge is running, see [Limitations](#limitations)).
 
 ## What it does
 
@@ -151,4 +150,4 @@ It prints each verdict, the seconds per photo and the total score.
 
 ## License
 
-Add your chosen license here (for example MIT) and include a `LICENSE` file.
+MIT. See [LICENSE](LICENSE). The bundled fonts (Barlow Condensed, Space Mono and Inter) are under the SIL Open Font License.
